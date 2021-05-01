@@ -21,7 +21,8 @@ const config: NuxtConfig = {
       remarkPlugins: [
         '~/utils/contributors'
       ]
-    }
+    },
+    ipfsRoot: 'QmPuFBWaJ1P48Ej3oFXX6HWhwcGNNGTMnVdy4k21LJQ3AF'
   }
 };
 

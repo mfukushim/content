@@ -1,4 +1,7 @@
-const { join, extname } = require('path')
+const {
+  join,
+  extname
+} = require('path')
 const fs = require('graceful-fs').promises
 const Hookable = require('hookable')
 const chokidar = require('chokidar')
@@ -7,7 +10,13 @@ const Loki = require('@lokidb/loki').default
 const LokiFullTextSearch = require('@lokidb/full-text-search').default
 const logger = require('consola').withScope('@nuxt/content')
 const { default: PQueue } = require('p-queue')
-const { Markdown, YAML, CSV, XML } = require('../parsers')
+const createClient = require('ipfs-http-client')
+const {
+  Markdown,
+  YAML,
+  CSV,
+  XML
+} = require('../parsers')
 
 const QueryBuilder = require('./query-builder')
 const EXTENSIONS = ['.md', '.json', '.json5', '.yaml', '.yml', '.csv', '.xml']
@@ -43,7 +52,10 @@ class Database extends Hookable {
    * @param {string} path - Requested path (path / directory).
    * @returns {QueryBuilder} Instance of QueryBuilder to be chained
    */
-  query (path, { deep = false, text = false } = {}) {
+  query (path, {
+    deep = false,
+    text = false
+  } = {}) {
     const isDir = !path || !!this.dirs.find(dir => dir === path)
     // Look for dir or path
     const query = isDir ? { dir: deep ? { $regex: new RegExp(`^${path}`) } : path } : { path }
@@ -66,9 +78,155 @@ class Database extends Hookable {
     this.items.clear()
 
     const startTime = process.hrtime()
-    await this.walk(this.dir)
+    if (this.options.ipfsRoot) {
+      const client = createClient('http://127.0.0.1:5002')
+      const root = await client.object.stat(this.options.ipfsRoot)
+      this.dirs = [this.options.ipfsRoot]
+      if (root.LinksSize > 0) {
+        await this.walkIpfs(client, this.options.ipfsRoot)
+      }
+    } else {
+      await this.walk(this.dir)
+    }
     const [s, ns] = process.hrtime(startTime)
     logger.info(`Parsed ${this.items.count()} files in ${s},${Math.round(ns / 1e8)} seconds`)
+  }
+
+  async walkIpfs (client, cidPath) {
+    // let files = []
+    try {
+      for await (const file of client.ls(cidPath)) {
+        const path = file.path // join(cidPath, file)
+        // const stats = await client.file.stat(file)
+
+        // ignore node_modules or hidden file
+        /* istanbul ignore if */
+        // if (file.includes('node_modules') || (/(^|\/)\.[^/.]/g).test(file)) {
+        //   return
+        // }
+
+        /* istanbul ignore else */
+        if (file.type === 'dir') {
+          // Store directory in local variable to be checked later
+          this.dirs.push(this.normalizePath(path))
+          // Walk recursively subfolder
+          await this.walkIpfs(client, path)
+          // return Promise.resolve(newVar1)
+        } else if (file.type === 'file') {
+          // Add file to collection
+          await this.insertIpfsFile(client, file)
+          // return Promise.resolve(newVar)
+        }
+      }
+      // files = await client.ls(cidPath)
+    } catch (e) {
+      logger.warn(`${cidPath} does not exist`)
+    }
+  }
+
+  async insertIpfsFile (client, file) {
+    const items = await this.parseIpfsFile(client, file)
+    if (!items) {
+      return Promise.resolve(undefined)
+    }
+    // Assume path is a directory if returning an array
+    if (items.length > 1) {
+      this.dirs.push(this.normalizePath(file.path))
+    }
+    for (const item of items) {
+      await this.callHook('file:beforeInsert', item)
+      this.items.insert(item)
+    }
+    return Promise.resolve(undefined)
+  }
+
+  async parseIpfsFile (client, fileBase) {
+    const extension = extname(fileBase.path)
+    // If unkown extension, skip
+    if (!EXTENSIONS.includes(extension) && !this.extendParserExtensions.includes(extension)) {
+      return Promise.resolve(undefined)
+    }
+
+    const f = async () => {
+      const array = []
+      for await (const chunk of client.cat(fileBase.path)) {
+        array.push(chunk)
+        // buf = Buffer.concat(buf, chunk)
+      }
+      const s = Buffer.concat(array).toString()
+      // const s = (new TextDecoder()).decode(Uint8Array.of(...array))
+      return s
+      // await client.cat(fileBase.path)
+    }
+    // const stats = await client.stat(file.path)
+    const file = {
+      path: fileBase.path, //  .path
+      extension,
+      data: await f()
+    }
+
+    await this.callHook('file:beforeParse', file)
+
+    const parser = ({
+      '.json': data => JSON.parse(data),
+      '.json5': data => JSON5.parse(data),
+      '.md': data => this.markdown.toJSON(data),
+      '.csv': data => this.csv.toJSON(data),
+      '.yaml': data => this.yaml.toJSON(data),
+      '.yml': data => this.yaml.toJSON(data),
+      '.xml': data => this.xml.toJSON(data),
+      ...this.extendParser
+    })[extension]
+
+    // Collect data from file
+    let data = []
+    try {
+      data = await parser(file.data, { path: fileBase.path })
+      // Force data to be an array
+      data = Array.isArray(data) ? data : [data]
+    } catch (err) {
+      logger.warn(`Could not parse ${fileBase.path.replace(this.cwd, '.')}:`, err.message)
+      return Promise.resolve(null)
+    }
+
+    // Normalize path without dir and ext
+    const normalizedPath = this.normalizePath(fileBase.path)
+
+    // Validate the existing dates to avoid wrong date format or typo
+    // const isValidDate = (date) => {
+    //   return date instanceof Date && !isNaN(date)
+    // }
+
+    return Promise.resolve(data.map((item) => {
+      const paths = normalizedPath.split('/')
+      // `item.slug` is necessary with JSON arrays since `slug` comes from filename by default
+      if (data.length > 1 && item.slug) {
+        paths.push(item.slug)
+      }
+      // Extract `dir` from paths
+      const dir = paths.slice(0, paths.length - 1).join('/') || '/'
+      // Extract `slug` from paths
+      const slug = paths[paths.length - 1]
+      // Construct full path
+      const path = paths.join('/')
+
+      // Overrides createdAt & updatedAt if it exists in the document
+      const existingCreatedAt = new Date()
+      const existingUpdatedAt = new Date()
+      // const existingCreatedAt = item.createdAt && new Date(item.createdAt)
+      // const existingUpdatedAt = item.updatedAt && new Date(item.updatedAt)
+
+      return {
+        slug,
+        // Allow slug override
+        ...item,
+        dir,
+        path,
+        extension,
+        createdAt: existingCreatedAt,
+        updatedAt: existingUpdatedAt
+      }
+    }))
   }
 
   /**
@@ -147,7 +305,10 @@ class Database extends Hookable {
 
       logger.info(`Updated ${path.replace(this.cwd, '.')}`)
       if (document) {
-        this.items.update({ $loki: document.$loki, meta: document.meta, ...item })
+        this.items.update({
+          $loki: document.$loki,
+          meta: document.meta, ...item
+        })
         return
       }
       this.items.insert(item)
@@ -267,6 +428,7 @@ class Database extends Hookable {
   /**
    * Watch base dir for changes
    */
+
   /* istanbul ignore next */
   watch () {
     this.queue = new PQueue({ concurrency: 1 })
@@ -284,6 +446,7 @@ class Database extends Hookable {
   /**
    * Init database and broadcast change through Websockets
    */
+
   /* istanbul ignore next */
   async refresh (event, path) {
     if (event === 'change') {
@@ -292,7 +455,10 @@ class Database extends Hookable {
       await this.init()
     }
 
-    this.callHook('file:updated', { event, path })
+    this.callHook('file:updated', {
+      event,
+      path
+    })
   }
 
   /*
