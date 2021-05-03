@@ -61,7 +61,6 @@ class Database extends Hookable {
     const query = isDir ? { dir: deep ? { $regex: new RegExp(`^${path}`) } : path } : { path }
     // Postprocess to get only first result (findOne)
     const postprocess = isDir ? [] : [data => data[0]]
-
     return new QueryBuilder({
       query: this.items.chain().find(query, !isDir),
       path,
@@ -79,11 +78,15 @@ class Database extends Hookable {
 
     const startTime = process.hrtime()
     if (this.options.ipfsRoot) {
-      const client = createClient('http://127.0.0.1:5002')
-      const root = await client.object.stat(this.options.ipfsRoot)
-      this.dirs = [this.options.ipfsRoot]
-      if (root.LinksSize > 0) {
-        await this.walkIpfs(client, this.options.ipfsRoot)
+      try{
+        const client = createClient('http://127.0.0.1:5002')
+        const root = await client.object.stat(this.options.ipfsRoot)
+        if (root.LinksSize > 0) {
+          this.dirs = [`/${this.options.ipfsRoot}`]
+          await this.walkIpfs(client, this.options.ipfsRoot)
+        }
+      } catch (e) {
+        logger.error(`ipfs api open fail ${this.options.ipfsRoot}`)
       }
     } else {
       await this.walk(this.dir)
@@ -96,29 +99,18 @@ class Database extends Hookable {
     // let files = []
     try {
       for await (const file of client.ls(cidPath)) {
-        const path = file.path // join(cidPath, file)
-        // const stats = await client.file.stat(file)
-
-        // ignore node_modules or hidden file
-        /* istanbul ignore if */
-        // if (file.includes('node_modules') || (/(^|\/)\.[^/.]/g).test(file)) {
-        //   return
-        // }
-
-        /* istanbul ignore else */
+        const path = file.path
+        //  mfs/unix fsパスを想定しないほうがよいが、記事内の画像パスは通常相対パスなのでパス構造なしは結構厳しい
         if (file.type === 'dir') {
-          // Store directory in local variable to be checked later
-          this.dirs.push(this.normalizePath(path))
+          // dir path
+          this.dirs.push(this.normalizePath('/' + path))
           // Walk recursively subfolder
           await this.walkIpfs(client, path)
-          // return Promise.resolve(newVar1)
         } else if (file.type === 'file') {
           // Add file to collection
           await this.insertIpfsFile(client, file)
-          // return Promise.resolve(newVar)
         }
       }
-      // files = await client.ls(cidPath)
     } catch (e) {
       logger.warn(`${cidPath} does not exist`)
     }
@@ -131,7 +123,7 @@ class Database extends Hookable {
     }
     // Assume path is a directory if returning an array
     if (items.length > 1) {
-      this.dirs.push(this.normalizePath(file.path))
+      this.dirs.push(this.normalizePath('/' + file.path))
     }
     for (const item of items) {
       await this.callHook('file:beforeInsert', item)
@@ -142,29 +134,23 @@ class Database extends Hookable {
 
   async parseIpfsFile (client, fileBase) {
     const extension = extname(fileBase.path)
-    // If unkown extension, skip
+    // If unknown extension, skip
     if (!EXTENSIONS.includes(extension) && !this.extendParserExtensions.includes(extension)) {
       return Promise.resolve(undefined)
     }
-
-    const f = async () => {
+    const rawAsync = async () => {
       const array = []
+      //  コンテンツを集約
       for await (const chunk of client.cat(fileBase.path)) {
         array.push(chunk)
-        // buf = Buffer.concat(buf, chunk)
       }
-      const s = Buffer.concat(array).toString()
-      // const s = (new TextDecoder()).decode(Uint8Array.of(...array))
-      return s
-      // await client.cat(fileBase.path)
+      return Buffer.concat(array).toString()
     }
-    // const stats = await client.stat(file.path)
     const file = {
-      path: fileBase.path, //  .path
+      path: '/' + fileBase.path, //  /cid/subPath
       extension,
-      data: await f()
+      data: await rawAsync()
     }
-
     await this.callHook('file:beforeParse', file)
 
     const parser = ({
@@ -178,7 +164,7 @@ class Database extends Hookable {
       ...this.extendParser
     })[extension]
 
-    // Collect data from file
+    // 各ファイルから抽出形式へ
     let data = []
     try {
       data = await parser(file.data, { path: fileBase.path })
@@ -190,7 +176,7 @@ class Database extends Hookable {
     }
 
     // Normalize path without dir and ext
-    const normalizedPath = this.normalizePath(fileBase.path)
+    const normalizedPath = '/' + this.normalizePath(fileBase.path)
 
     // Validate the existing dates to avoid wrong date format or typo
     // const isValidDate = (date) => {
@@ -201,7 +187,7 @@ class Database extends Hookable {
       const paths = normalizedPath.split('/')
       // `item.slug` is necessary with JSON arrays since `slug` comes from filename by default
       if (data.length > 1 && item.slug) {
-        paths.push(item.slug)
+        paths.push(item.slug) //  末端はslug名
       }
       // Extract `dir` from paths
       const dir = paths.slice(0, paths.length - 1).join('/') || '/'
