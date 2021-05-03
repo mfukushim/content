@@ -26,20 +26,18 @@
   </div>
 </template>
 
-<script lang="ts">
+<script>
 export default {
-  async asyncData({$content}) {
-    const con = await $content('QmPuFBWaJ1P48Ej3oFXX6HWhwcGNNGTMnVdy4k21LJQ3AF').fetch()
-    /*
-        const markdown = await $content('markdown').fetch()
-        const json = await $content('json').fetch()
-        const json5 = await $content('json5').fetch()
-        const csv = await $content('csv').fetch()
-        const yaml = await $content('yaml').fetch()
-        const yml = await $content('yml').fetch()
-        const xml = await $content('xml').fetch()
-        const custom = await $content('custom').fetch()
-    */
+  async asyncData ({ $content }) {
+    const con = await $content('QmXHFDwTgDALHWf5dvTvfKEGHALfE4ecqdYJJAMrEuA62L', { deep: true }).limit(2).fetch()
+    // const markdown = await $content('markdown').fetch()
+    // const json = await $content('json').fetch()
+    // const json5 = await $content('json5').fetch()
+    // const csv = await $content('csv').fetch()
+    // const yaml = await $content('yaml').fetch()
+    // const yml = await $content('yml').fetch()
+    // const xml = await $content('xml').fetch()
+    // const custom = await $content('custom').fetch()
 
     return {
       con

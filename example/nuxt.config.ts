@@ -22,7 +22,7 @@ const config: NuxtConfig = {
         '~/utils/contributors'
       ]
     },
-    ipfsRoot: 'QmPuFBWaJ1P48Ej3oFXX6HWhwcGNNGTMnVdy4k21LJQ3AF'
+    ipfsRoot: 'QmXHFDwTgDALHWf5dvTvfKEGHALfE4ecqdYJJAMrEuA62L'
   }
 };
 
