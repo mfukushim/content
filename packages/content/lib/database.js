@@ -78,12 +78,12 @@ class Database extends Hookable {
 
     const startTime = process.hrtime()
     if (this.options.ipfsRoot) {
-      try{
+      try {
         const client = createClient('http://127.0.0.1:5002')
         const root = await client.object.stat(this.options.ipfsRoot)
         if (root.LinksSize > 0) {
           this.dirs = [`/${this.options.ipfsRoot}`]
-          await this.walkIpfs(client, this.options.ipfsRoot)
+          await this.walkIpfs(client, this.options.ipfsRoot, '')
         }
       } catch (e) {
         logger.error(`ipfs api open fail ${this.options.ipfsRoot}`)
@@ -95,8 +95,7 @@ class Database extends Hookable {
     logger.info(`Parsed ${this.items.count()} files in ${s}.${Math.round(ns / 1e8)} seconds`)
   }
 
-  async walkIpfs (client, cidPath) {
-    // let files = []
+  async walkIpfs (client, cidPath, targetCid, parentCid) {
     try {
       for await (const file of client.ls(cidPath)) {
         const path = file.path
@@ -105,10 +104,11 @@ class Database extends Hookable {
           // dir path
           this.dirs.push(this.normalizePath('/' + path))
           // Walk recursively subfolder
-          await this.walkIpfs(client, path)
+          await this.walkIpfs(client, path, file.cid.toString(), targetCid)
         } else if (file.type === 'file') {
           // Add file to collection
-          await this.insertIpfsFile(client, file)
+          await this.insertIpfsFile(client, file, file.cid.toString(), targetCid)
+          // await this.insertIpfsFile(client, file, file.cid.toString())
         }
       }
     } catch (e) {
@@ -116,8 +116,8 @@ class Database extends Hookable {
     }
   }
 
-  async insertIpfsFile (client, file) {
-    const items = await this.parseIpfsFile(client, file)
+  async insertIpfsFile (client, file, targetCid, parentCid) {
+    const items = await this.parseIpfsFile(client, file, targetCid, parentCid)
     if (!items) {
       return Promise.resolve(undefined)
     }
@@ -132,13 +132,15 @@ class Database extends Hookable {
     return Promise.resolve(undefined)
   }
 
-  async parseIpfsFile (client, fileBase) {
+  async parseIpfsFile (client, fileBase, targetCid, parentCid) {
     const extension = extname(fileBase.path)
     // If unknown extension, skip
     if (!EXTENSIONS.includes(extension) && !this.extendParserExtensions.includes(extension)) {
       return Promise.resolve(undefined)
     }
-    const rawAsync = async () => {
+    //  TODO cidを一緒に保存、もしindexファイルならparentCidも保存
+
+    rawAsync = async () => {
       const array = []
       //  コンテンツを集約
       for await (const chunk of client.cat(fileBase.path)) {
