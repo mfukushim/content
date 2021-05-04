@@ -11,6 +11,7 @@ const LokiFullTextSearch = require('@lokidb/full-text-search').default
 const logger = require('consola').withScope('@nuxt/content')
 const { default: PQueue } = require('p-queue')
 const createClient = require('ipfs-http-client')
+const jp = require('jsonpath')
 const {
   Markdown,
   YAML,
@@ -138,9 +139,7 @@ class Database extends Hookable {
     if (!EXTENSIONS.includes(extension) && !this.extendParserExtensions.includes(extension)) {
       return Promise.resolve(undefined)
     }
-    //  TODO cidを一緒に保存、もしindexファイルならparentCidも保存
-
-    rawAsync = async () => {
+    const rawAsync = async () => {
       const array = []
       //  コンテンツを集約
       for await (const chunk of client.cat(fileBase.path)) {
@@ -176,6 +175,11 @@ class Database extends Hookable {
       logger.warn(`Could not parse ${fileBase.path.replace(this.cwd, '.')}:`, err.message)
       return Promise.resolve(null)
     }
+    //  json内の tag: img, props: { src: imagePath } のimagePath が相対パス (xxx:// でも / 開始でもない場合) 親cidからのipfs相対パスの記述に変更する
+    jp.apply(data, '$..props.src', function (val) {
+      if (val.includes('://') || String.prototype.startsWith('/', val)) { return val }
+      return `https://ipfs.io/ipfs/${parentCid}/` + val
+    })
 
     // Normalize path without dir and ext
     const normalizedPath = '/' + this.normalizePath(fileBase.path)
@@ -210,6 +214,8 @@ class Database extends Hookable {
         ...item,
         dir,
         path,
+        cid: targetCid,
+        parentCid,
         extension,
         createdAt: existingCreatedAt,
         updatedAt: existingUpdatedAt
