@@ -28,7 +28,8 @@ interface DatabaseOptions {
   liveEdit: boolean;
   watch: boolean;
   editor: string;
-  ipfsRoot: string;
+  ipfsApiEndpoint?: string;
+  ipfsRoot?: string;
 }
 
 interface QueryBuilderOptions {

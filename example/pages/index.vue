@@ -29,7 +29,8 @@
 <script>
 export default {
   async asyncData ({ $content }) {
-    const con = await $content('QmXHFDwTgDALHWf5dvTvfKEGHALfE4ecqdYJJAMrEuA62L', { deep: true }).sortBy('date', 'desc').limit(2).fetch()
+    const con = await $content('ipfs', { deep: true }).sortBy('date', 'desc').limit(2).fetch()
+    //  QmXHFDwTgDALHWf5dvTvfKEGHALfE4ecqdYJJAMrEuA62L
     // const markdown = await $content('markdown').fetch()
     // const json = await $content('json').fetch()
     // const json5 = await $content('json5').fetch()

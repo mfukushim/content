@@ -80,14 +80,14 @@ class Database extends Hookable {
     const startTime = process.hrtime()
     if (this.options.ipfsRoot) {
       try {
-        const client = createClient('http://127.0.0.1:5002')
+        const client = createClient(this.options.ipfsApiEndpoint)
         const root = await client.object.stat(this.options.ipfsRoot)
         if (root.LinksSize > 0) {
-          this.dirs = [`/${this.options.ipfsRoot}`]
+          this.dirs = ['/ipfs']
           await this.walkIpfs(client, this.options.ipfsRoot, '')
         }
       } catch (e) {
-        logger.error(`ipfs api open fail ${this.options.ipfsRoot}`)
+        logger.error(`ipfs api open fail ${this.options.ipfsApiEndpoint}`)
       }
     } else {
       await this.walk(this.dir)
@@ -103,13 +103,12 @@ class Database extends Hookable {
         //  mfs/unix fsパスを想定しないほうがよいが、記事内の画像パスは通常相対パスなのでパス構造なしは結構厳しい
         if (file.type === 'dir') {
           // dir path
-          this.dirs.push(this.normalizePath('/' + path))
+          this.dirs.push(this.normalizePath('/ipfs' + path.substr(path.indexOf('/'))))
           // Walk recursively subfolder
           await this.walkIpfs(client, path, file.cid.toString(), targetCid)
         } else if (file.type === 'file') {
           // Add file to collection
           await this.insertIpfsFile(client, file, file.cid.toString(), targetCid)
-          // await this.insertIpfsFile(client, file, file.cid.toString())
         }
       }
     } catch (e) {
@@ -124,7 +123,7 @@ class Database extends Hookable {
     }
     // Assume path is a directory if returning an array
     if (items.length > 1) {
-      this.dirs.push(this.normalizePath('/' + file.path))
+      this.dirs.push(this.normalizePath('/ipfs' + file.path.substr(file.path.indexOf('/'))))
     }
     for (const item of items) {
       await this.callHook('file:beforeInsert', item)
@@ -148,7 +147,7 @@ class Database extends Hookable {
       return Buffer.concat(array).toString()
     }
     const file = {
-      path: '/' + fileBase.path, //  /cid/subPath
+      path: '/ipfs' + fileBase.path.substr(fileBase.path.indexOf('/')),
       extension,
       data: await rawAsync()
     }
@@ -177,12 +176,15 @@ class Database extends Hookable {
     }
     //  json内の tag: img, props: { src: imagePath } のimagePath が相対パス (xxx:// でも / 開始でもない場合) 親cidからのipfs相対パスの記述に変更する
     jp.apply(data, '$..props.src', function (val) {
-      if (val.includes('://') || String.prototype.startsWith('/', val)) { return val }
+      if (val.includes('://') || String.prototype.startsWith('/', val)) {
+        return val
+      }
       return `https://ipfs.io/ipfs/${parentCid}/` + val
     })
 
     // Normalize path without dir and ext
-    const normalizedPath = '/' + this.normalizePath(fileBase.path)
+    const fpath = this.normalizePath(fileBase.path)
+    const normalizedPath = '/ipfs' + fpath.substr(fpath.indexOf('/'))
 
     // Validate the existing dates to avoid wrong date format or typo
     // const isValidDate = (date) => {
@@ -197,8 +199,8 @@ class Database extends Hookable {
       }
       // Extract `dir` from paths
       const dir = paths.slice(0, paths.length - 1).join('/') || '/'
-      // Extract `slug` from paths
-      const slug = paths[paths.length - 1]
+      // Extract `slug` from paths  content_name/index になる想定なので -2の位置を取る
+      const slug = paths[paths.length - 2]
       // Construct full path
       const path = paths.join('/')
 
