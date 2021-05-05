@@ -97,7 +97,8 @@ module.exports = async function (moduleOptions) {
 
   const database = new Database({
     ...options,
-    cwd: this.options.srcDir
+    cwd: this.options.srcDir,
+    ipfsRoot: this.options.publicRuntimeConfig.ipfsRoot
   })
 
   // Database hooks

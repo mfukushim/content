@@ -42,7 +42,7 @@ interface IContentOptions {
   extendParser?: {
     [extension: string]: (file: string) => any;
   };
-  ipfsRoot?: string;
+  ipfsApiEndpoint?: string;
 }
 
 // Nuxt 2.9+
