@@ -102,7 +102,7 @@ sample structure
 ```
 document root (QmXHFDwTgDALHWf5dvTvfKEGHALfE4ecqdYJJAMrEuA62L)
 │  
-├─2021-04-24-2021-04-24付近
+├─2021-04-24-2021-04-24付近 (QmQi911LgFcckMprMTprfETdzt76pyuvKpXCvuqSDD1kTx)
 │      index.md
 │      
 ├─2021-04-25-ipfsでブログを作ってみてわかったこと (QmZDeR9HvR1wpWXyXMiQaCAFQ241NNGfzEuNNXeh9qNaj1)
