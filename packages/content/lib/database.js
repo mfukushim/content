@@ -83,11 +83,11 @@ class Database extends Hookable {
         const client = createClient(this.options.ipfsApiEndpoint)
         const root = await client.object.stat(this.options.ipfsRoot)
         if (root.LinksSize > 0) {
-          this.dirs = ['/ipfs']
-          await this.walkIpfs(client, this.options.ipfsRoot, '')
+          this.dirs = []
+          await this.walkIpfs(client, '/ipfs', this.options.ipfsRoot)
         }
       } catch (e) {
-        logger.error(`ipfs api open fail ${this.options.ipfsApiEndpoint}`)
+        throw new Error(`ipfs api open fail ${this.options.ipfsApiEndpoint}`)
       }
     } else {
       await this.walk(this.dir)
@@ -98,18 +98,18 @@ class Database extends Hookable {
 
   async walkIpfs (client, cidPath, targetCid, parentCid) {
     try {
-      for await (const file of client.ls(cidPath)) {
-        const path = file.path
-        //  mfs/unix fsパスを想定しないほうがよいが、記事内の画像パスは通常相対パスなのでパス構造なしは結構厳しい
-        if (file.type === 'dir') {
-          // dir path
-          this.dirs.push(this.normalizePath('/ipfs' + path.substr(path.indexOf('/'))))
+      const links = await client.object.links(targetCid)
+      if (Array.isArray(links) && links.length > 0) {
+        // dir path
+        this.dirs.push(this.normalizePath(cidPath))
+        await Promise.all(links.map(async (link) => {
           // Walk recursively subfolder
-          await this.walkIpfs(client, path, file.cid.toString(), targetCid)
-        } else if (file.type === 'file') {
-          // Add file to collection
-          await this.insertIpfsFile(client, file, file.cid.toString(), targetCid)
-        }
+          await this.walkIpfs(client, `${cidPath}/${link.Name}`, link.Hash.toString(), targetCid)
+          return Promise.resolve()
+        }))
+      } else {
+        // Add file to collection
+        await this.insertIpfsFile(client, `${cidPath}`, targetCid, parentCid)
       }
     } catch (e) {
       logger.warn(`${cidPath} does not exist`)
@@ -133,7 +133,8 @@ class Database extends Hookable {
   }
 
   async parseIpfsFile (client, fileBase, targetCid, parentCid) {
-    const extension = extname(fileBase.path)
+    const extension = extname(fileBase)
+    // const extension = extname(fileBase.path)
     // If unknown extension, skip
     if (!EXTENSIONS.includes(extension) && !this.extendParserExtensions.includes(extension)) {
       return Promise.resolve(undefined)
@@ -141,13 +142,13 @@ class Database extends Hookable {
     const rawAsync = async () => {
       const array = []
       //  コンテンツを集約
-      for await (const chunk of client.cat(fileBase.path)) {
+      for await (const chunk of client.cat(targetCid)) {
         array.push(chunk)
       }
       return Buffer.concat(array).toString()
     }
     const file = {
-      path: '/ipfs' + fileBase.path.substr(fileBase.path.indexOf('/')),
+      path: '/ipfs' + fileBase.substr(fileBase.indexOf('/')),
       extension,
       data: await rawAsync()
     }
@@ -167,11 +168,11 @@ class Database extends Hookable {
     // 各ファイルから抽出形式へ
     let data = []
     try {
-      data = await parser(file.data, { path: fileBase.path })
+      data = await parser(file.data, { path: fileBase })
       // Force data to be an array
       data = Array.isArray(data) ? data : [data]
     } catch (err) {
-      logger.warn(`Could not parse ${fileBase.path.replace(this.cwd, '.')}:`, err.message)
+      logger.warn(`Could not parse ${fileBase.replace(this.cwd, '.')}:`, err.message)
       return Promise.resolve(null)
     }
     //  json内の tag: img, props: { src: imagePath } のimagePath が相対パス (xxx:// でも / 開始でもない場合) 親cidからのipfs相対パスの記述に変更する
@@ -183,20 +184,10 @@ class Database extends Hookable {
     })
 
     // Normalize path without dir and ext
-    const fpath = this.normalizePath(fileBase.path)
-    const normalizedPath = '/ipfs' + fpath.substr(fpath.indexOf('/'))
-
-    // Validate the existing dates to avoid wrong date format or typo
-    // const isValidDate = (date) => {
-    //   return date instanceof Date && !isNaN(date)
-    // }
+    const normalizedPath = this.normalizePath(fileBase)
 
     return Promise.resolve(data.map((item) => {
       const paths = normalizedPath.split('/')
-      // `item.slug` is necessary with JSON arrays since `slug` comes from filename by default
-      if (data.length > 1 && item.slug) {
-        paths.push(item.slug) //  末端はslug名
-      }
       // Extract `dir` from paths
       const dir = paths.slice(0, paths.length - 1).join('/') || '/'
       // Extract `slug` from paths  content_name/index になる想定なので -2の位置を取る
@@ -210,6 +201,7 @@ class Database extends Hookable {
       // const existingCreatedAt = item.createdAt && new Date(item.createdAt)
       // const existingUpdatedAt = item.updatedAt && new Date(item.updatedAt)
 
+      logger.info(`${path},${slug},${targetCid}`)
       return {
         slug,
         // Allow slug override
