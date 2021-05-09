@@ -81,8 +81,8 @@ class Database extends Hookable {
     if (this.options.ipfsRoot) {
       try {
         const client = createClient(this.options.ipfsApiEndpoint)
-        const root = await client.object.stat(this.options.ipfsRoot)
-        if (root.LinksSize > 0) {
+        const root = await client.dag.get(this.options.ipfsRoot)
+        if (root && root.value && root.value.Links.length > 0) {
           this.dirs = []
           await this.walkIpfs(client, '/ipfs', this.options.ipfsRoot)
         }
@@ -98,7 +98,8 @@ class Database extends Hookable {
 
   async walkIpfs (client, cidPath, targetCid, parentCid) {
     try {
-      const links = await client.object.links(targetCid)
+      const dag = await client.dag.get(targetCid)
+      const links = dag.value.Links
       if (Array.isArray(links) && links.length > 0) {
         // dir path
         this.dirs.push(this.normalizePath(cidPath))
@@ -134,7 +135,6 @@ class Database extends Hookable {
 
   async parseIpfsFile (client, fileBase, targetCid, parentCid) {
     const extension = extname(fileBase)
-    // const extension = extname(fileBase.path)
     // If unknown extension, skip
     if (!EXTENSIONS.includes(extension) && !this.extendParserExtensions.includes(extension)) {
       return Promise.resolve(undefined)
