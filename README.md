@@ -100,15 +100,15 @@ export default class Category extends Vue {
 sample structure  
 
 ```
-document root (QmXHFDwTgDALHWf5dvTvfKEGHALfE4ecqdYJJAMrEuA62L)
+document root (DAG node ,bafyreighellwstevjhzeow5ktf3sn3sdgivscqdebbu5i6375xzlilhcle)
 │  
-├─2021-04-24-2021-04-24付近 (QmQi911LgFcckMprMTprfETdzt76pyuvKpXCvuqSDD1kTx)
+├─2021-04-24-2021-04-24付近 (MFS/UnixFS, QmQi911LgFcckMprMTprfETdzt76pyuvKpXCvuqSDD1kTx)
 │      index.md
 │      
-├─2021-04-25-ipfsでブログを作ってみてわかったこと (QmZDeR9HvR1wpWXyXMiQaCAFQ241NNGfzEuNNXeh9qNaj1)
+├─2021-04-25-ipfsでブログを作ってみてわかったこと (MFS/UnixFS, QmZDeR9HvR1wpWXyXMiQaCAFQ241NNGfzEuNNXeh9qNaj1)
 │      index.md
 │      
-└─2021-04-26-学研電子辞典シリーズ-楽しむ辞典-現代新国語辞典 (Qmd1DEyZVCHrCjaKHqWkLAo3xmRAzQRgjKmZeHr1RTWiDC)
+└─2021-04-26-学研電子辞典シリーズ-楽しむ辞典-現代新国語辞典 (MFS/UnixFS, Qmd1DEyZVCHrCjaKHqWkLAo3xmRAzQRgjKmZeHr1RTWiDC)
     │  index.md
     │  
     └─images
