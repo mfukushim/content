@@ -25,7 +25,7 @@ const config: NuxtConfig = {
     ipfsApiEndpoint: 'http://127.0.0.1:5002'
   },
   publicRuntimeConfig: {
-    ipfsRoot: 'QmXHFDwTgDALHWf5dvTvfKEGHALfE4ecqdYJJAMrEuA62L'
+    ipfsRoot: 'bafyreid5xfsyrpldwtuwyxpxhnsvuoyefeadydcgqg34s54a2pxieif3sa'
   },
   generate: {}
 };
