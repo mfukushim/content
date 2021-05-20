@@ -5,9 +5,10 @@
 </template>
 
 <script lang="ts">
+import { Context } from '@nuxt/types'
 export default {
   // @ts-ignore
-  async asyncData ({ $content }) {
+  async asyncData ({ $content }:Context) {
     const markdown = await $content('authors-page').fetch()
     return {
       markdown
