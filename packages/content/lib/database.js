@@ -10,7 +10,8 @@ const Loki = require('@lokidb/loki').default
 const LokiFullTextSearch = require('@lokidb/full-text-search').default
 const logger = require('consola').withScope('@nuxt/content')
 const { default: PQueue } = require('p-queue')
-const createClient = require('ipfs-http-client')
+const ipfsHttpClient = require('ipfs-http-client')
+const ipfsCoreClient = require('ipfs-core')
 const jp = require('jsonpath')
 const {
   Markdown,
@@ -21,6 +22,8 @@ const {
 
 const QueryBuilder = require('./query-builder')
 const EXTENSIONS = ['.md', '.json', '.json5', '.yaml', '.yml', '.csv', '.xml']
+
+let client = null
 
 LokiFullTextSearch.register()
 
@@ -80,14 +83,16 @@ class Database extends Hookable {
     const startTime = process.hrtime()
     if (this.options.ipfsRoot) {
       try {
-        const client = createClient(this.options.ipfsApiEndpoint)
+        if (!client) {
+          client = this.options.ipfsApiEndpoint ? ipfsHttpClient(this.options.ipfsApiEndpoint) : await ipfsCoreClient.create()
+        }
         const root = await client.dag.get(this.options.ipfsRoot)
         if (root && root.value && root.value.Links.length > 0) {
           this.dirs = []
           await this.walkIpfs(client, '/ipfs', this.options.ipfsRoot)
         }
       } catch (e) {
-        throw new Error(`ipfs api open fail ${this.options.ipfsApiEndpoint}`)
+        throw new Error(`ipfs api open fail ${this.options.ipfsApiEndpoint}/${e}`)
       }
     } else {
       await this.walk(this.dir)
