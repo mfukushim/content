@@ -110,7 +110,8 @@ class Database extends Hookable {
         this.dirs.push(this.normalizePath(cidPath))
         await Promise.all(links.map(async (link) => {
           // Walk recursively subfolder
-          await this.walkIpfs(client, `${cidPath}/${link.Name}`, link.Hash.toString(), targetCid)
+          const name = link.Name.replace(/\//g, '-')
+          await this.walkIpfs(client, `${cidPath}/${name}`, link.Hash.toString(), targetCid)
           return Promise.resolve()
         }))
       } else {
