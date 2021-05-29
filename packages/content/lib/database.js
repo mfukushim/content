@@ -84,7 +84,11 @@ class Database extends Hookable {
     if (this.options.ipfsRoot) {
       try {
         if (!client) {
-          client = this.options.ipfsApiEndpoint ? ipfsHttpClient(this.options.ipfsApiEndpoint) : await ipfsCoreClient.create()
+          client = this.options.ipfsApiEndpoint ? ipfsHttpClient(this.options.ipfsApiEndpoint)
+            : await ipfsCoreClient.create(
+              {preload:{enabled: true,addresses:["/ip4/192.168.11.249/tcp/4001/p2p/12D3KooWLuWXC8orwaqim17Wy91p6nSSi8LxEJjV25rReGgcEDnH"]},
+                config:{Bootstrap:["/ip4/192.168.11.249/tcp/4001/p2p/12D3KooWLuWXC8orwaqim17Wy91p6nSSi8LxEJjV25rReGgcEDnH"]}}
+            )
         }
         const root = await client.dag.get(this.options.ipfsRoot)
         if (root && root.value && root.value.Links.length > 0) {
