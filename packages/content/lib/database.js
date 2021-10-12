@@ -22,6 +22,8 @@ const {
 const QueryBuilder = require('./query-builder')
 const EXTENSIONS = ['.md', '.json', '.json5', '.yaml', '.yml', '.csv', '.xml']
 
+let client = null
+
 LokiFullTextSearch.register()
 
 class Database extends Hookable {
@@ -93,7 +95,147 @@ class Database extends Hookable {
       await this.walk(this.dir)
     }
     const [s, ns] = process.hrtime(startTime)
-    logger.info(`Parsed ${this.items.count()} files in ${s},${Math.round(ns / 1e8)} seconds`)
+    logger.info(`Parsed ${this.items.count()} files in ${s}.${Math.round(ns / 1e8)} seconds`)
+  }
+
+  /**
+   * @param {*} client
+   * @param {string} cidPath
+   * @param {CID} targetCid
+   * @param {CID} parentCid
+   */
+  async walkIpfs (client, cidPath, targetCid, parentCid) {
+    try {
+      const dag = await client.dag.get(targetCid)
+      const links = dag.value.Links
+      if (Array.isArray(links) && links.length > 0) {
+        // dir path
+        this.dirs.push(this.normalizePath(cidPath))
+        await Promise.all(links.map(async (link) => {
+          // Walk recursively subfolder
+          const name = link.Name.replace(/\//g, '-')
+          await this.walkIpfs(client, `${cidPath}/${name}`, link.Hash, targetCid)
+          return Promise.resolve()
+        }))
+      } else {
+        // Add file to collection
+        await this.insertIpfsFile(client, `${cidPath}`, targetCid, parentCid)
+      }
+    } catch (e) {
+      logger.warn(`${cidPath} does not exist`)
+    }
+  }
+
+  /**
+   * @param {*} client
+   * @param {*} file
+   * @param {CID} targetCid
+   * @param {CID} parentCid
+   */
+  async insertIpfsFile (client, file, targetCid, parentCid) {
+    const items = await this.parseIpfsFile(client, file, targetCid, parentCid)
+    if (!items) {
+      return Promise.resolve(undefined)
+    }
+    // Assume path is a directory if returning an array
+    if (items.length > 1) {
+      this.dirs.push(this.normalizePath('/ipfs' + file.path.substr(file.path.indexOf('/'))))
+    }
+    for (const item of items) {
+      await this.callHook('file:beforeInsert', item)
+      this.items.insert(item)
+    }
+    return Promise.resolve(undefined)
+  }
+
+  /**
+   * @param {*} client
+   * @param {*} fileBase
+   * @param {CID} targetCid
+   * @param {CID} parentCid
+   */
+  async parseIpfsFile (client, fileBase, targetCid, parentCid) {
+    const extension = extname(fileBase)
+    // If unknown extension, skip
+    if (!EXTENSIONS.includes(extension) && !this.extendParserExtensions.includes(extension)) {
+      return Promise.resolve(undefined)
+    }
+    const rawAsync = async () => {
+      const array = []
+      //  コンテンツを集約
+      for await (const chunk of client.cat(targetCid)) {
+        array.push(chunk)
+      }
+      return Buffer.concat(array).toString()
+    }
+    const file = {
+      path: '/ipfs' + fileBase.substr(fileBase.indexOf('/')),
+      extension,
+      data: await rawAsync()
+    }
+    await this.callHook('file:beforeParse', file)
+
+    const parser = ({
+      '.json': data => JSON.parse(data),
+      '.json5': data => JSON5.parse(data),
+      '.md': data => this.markdown.toJSON(data),
+      '.csv': data => this.csv.toJSON(data),
+      '.yaml': data => this.yaml.toJSON(data),
+      '.yml': data => this.yaml.toJSON(data),
+      '.xml': data => this.xml.toJSON(data),
+      ...this.extendParser
+    })[extension]
+
+    // 各ファイルから抽出形式へ
+    let data = []
+    try {
+      data = await parser(file.data, { path: fileBase })
+      // Force data to be an array
+      data = Array.isArray(data) ? data : [data]
+    } catch (err) {
+      logger.warn(`Could not parse ${fileBase.replace(this.cwd, '.')}:`, err.message)
+      return Promise.resolve(null)
+    }
+    //  json内の tag: img, props: { src: imagePath } のimagePath が相対パス (xxx:// でも / 開始でもない場合) 親cidからのipfs相対パスの記述に変更する
+    jp.apply(data, '$..props.src', function (val) {
+      if (val.includes('://') || String.prototype.startsWith('/', val)) {
+        return val
+      }
+      return `https://ipfs.io/ipfs/${parentCid}/` + val
+    })
+
+    // Normalize path without dir and ext
+    const normalizedPath = this.normalizePath(fileBase)
+
+    return Promise.resolve(data.map((item) => {
+      const paths = normalizedPath.split('/')
+      // Extract `dir` from paths
+      const dir = paths.slice(0, paths.length - 1).join('/') || '/'
+      // Extract `slug` from paths  content_name/index になる想定なので -2の位置を取る
+      const slug = paths[paths.length - 2]
+      // Construct full path
+      const path = paths.join('/')
+
+      // Overrides createdAt & updatedAt if it exists in the document
+      const existingCreatedAt = new Date()
+      const existingUpdatedAt = new Date()
+      // const existingCreatedAt = item.createdAt && new Date(item.createdAt)
+      // const existingUpdatedAt = item.updatedAt && new Date(item.updatedAt)
+
+      logger.info(`${path},${slug},${targetCid}`)
+      return {
+        slug,
+        // Allow slug override
+        ...item,
+        dir,
+        path,
+        cid: targetCid,
+        parentCid,
+        extension,
+        createdAt: existingCreatedAt,
+        updatedAt: existingUpdatedAt
+      }
+    }))
   }
 
   /**
