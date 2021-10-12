@@ -10,8 +10,10 @@ const Loki = require('@lokidb/loki').default
 const LokiFullTextSearch = require('@lokidb/full-text-search').default
 const logger = require('consola').withScope('@nuxt/content')
 const { default: PQueue } = require('p-queue')
-const ipfsHttpClient = require('ipfs-http-client')
+const { create } = require('ipfs-http-client')
 const ipfsCoreClient = require('ipfs-core')
+const { CID } = require('ipfs-core')
+
 const jp = require('jsonpath')
 const {
   Markdown,
@@ -84,12 +86,12 @@ class Database extends Hookable {
     if (this.options.ipfsRoot) {
       try {
         if (!client) {
-          client = this.options.ipfsApiEndpoint ? ipfsHttpClient(this.options.ipfsApiEndpoint) : await ipfsCoreClient.create()
+          client = this.options.ipfsApiEndpoint ? create(this.options.ipfsApiEndpoint) : await ipfsCoreClient.create()
         }
-        const root = await client.dag.get(this.options.ipfsRoot)
+        const root = await client.dag.get(CID.parse(this.options.ipfsRoot))
         if (root && root.value && root.value.Links.length > 0) {
           this.dirs = []
-          await this.walkIpfs(client, '/ipfs', this.options.ipfsRoot)
+          await this.walkIpfs(client, '/ipfs', CID.parse(this.options.ipfsRoot))
         }
       } catch (e) {
         throw new Error(`ipfs api open fail ${this.options.ipfsApiEndpoint}/${e}`)
@@ -101,6 +103,12 @@ class Database extends Hookable {
     logger.info(`Parsed ${this.items.count()} files in ${s}.${Math.round(ns / 1e8)} seconds`)
   }
 
+  /**
+   * @param {*} client
+   * @param {string} cidPath
+   * @param {CID} targetCid
+   * @param {CID} parentCid
+   */
   async walkIpfs (client, cidPath, targetCid, parentCid) {
     try {
       const dag = await client.dag.get(targetCid)
@@ -111,7 +119,7 @@ class Database extends Hookable {
         await Promise.all(links.map(async (link) => {
           // Walk recursively subfolder
           const name = link.Name.replace(/\//g, '-')
-          await this.walkIpfs(client, `${cidPath}/${name}`, link.Hash.toString(), targetCid)
+          await this.walkIpfs(client, `${cidPath}/${name}`, link.Hash, targetCid)
           return Promise.resolve()
         }))
       } else {
@@ -123,6 +131,12 @@ class Database extends Hookable {
     }
   }
 
+  /**
+   * @param {*} client
+   * @param {*} file
+   * @param {CID} targetCid
+   * @param {CID} parentCid
+   */
   async insertIpfsFile (client, file, targetCid, parentCid) {
     const items = await this.parseIpfsFile(client, file, targetCid, parentCid)
     if (!items) {
@@ -139,6 +153,12 @@ class Database extends Hookable {
     return Promise.resolve(undefined)
   }
 
+  /**
+   * @param {*} client
+   * @param {*} fileBase
+   * @param {CID} targetCid
+   * @param {CID} parentCid
+   */
   async parseIpfsFile (client, fileBase, targetCid, parentCid) {
     const extension = extname(fileBase)
     // If unknown extension, skip
