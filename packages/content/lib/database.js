@@ -1,5 +1,6 @@
 const { join, extname } = require('path')
 const fs = require('graceful-fs').promises
+const mkdirp = require('mkdirp')
 const Hookable = require('hookable')
 const chokidar = require('chokidar')
 const JSON5 = require('json5')
@@ -9,7 +10,8 @@ const logger = require('consola').withScope('@nuxt/content')
 const { default: PQueue } = require('p-queue')
 const { create } = require('ipfs-http-client')
 const ipfsCoreClient = require('ipfs-core')
-const { CID } = require('ipfs-core')
+// const { CID } = require('ipfs-core')
+const { CID } = require('multiformats/cid')
 
 const jp = require('jsonpath')
 const {
@@ -30,7 +32,9 @@ class Database extends Hookable {
   constructor (options) {
     super()
     this.dir = options.dir || process.cwd()
-    this.cwd = options.cwd || process.cwd()
+    this.srcDir = options.srcDir || process.cwd()
+    this.buildDir = options.buildDir || process.cwd()
+    this.useCache = options.useCache || false
     this.markdown = new Markdown(options.markdown)
     this.yaml = new YAML(options.yaml)
     this.csv = new CSV(options.csv)
@@ -38,10 +42,11 @@ class Database extends Hookable {
     // Create Loki database
     this.db = new Loki('content.db')
     // Init collection
-    this.items = this.db.addCollection('items', {
+    this.itemsCollectionOptions = {
       fullTextSearch: options.fullTextSearchFields.map(field => ({ field })),
       nestedProperties: options.nestedProperties
-    })
+    }
+    this.items = this.db.addCollection('items', this.itemsCollectionOptions)
     // User Parsers
     this.extendParser = options.extendParser || {}
     this.extendParserExtensions = Object.keys(this.extendParser)
@@ -70,14 +75,23 @@ class Database extends Hookable {
     }, this.options)
   }
 
+  async init () {
+    if (this.useCache) {
+      try {
+        return await this.initFromCache()
+      } catch (error) {}
+    }
+
+    await this.initFromFilesystem()
+  }
+
   /**
    * Clear items in database and load files into collection
    */
-  async init () {
+  async initFromFilesystem () {
+    const startTime = process.hrtime()
     this.dirs = ['/']
     this.items.clear()
-
-    const startTime = process.hrtime()
     if (this.options.ipfsRoot) {
       try {
         if (!client) {
@@ -96,6 +110,43 @@ class Database extends Hookable {
     }
     const [s, ns] = process.hrtime(startTime)
     logger.info(`Parsed ${this.items.count()} files in ${s}.${Math.round(ns / 1e8)} seconds`)
+  }
+
+  async initFromCache () {
+    const startTime = process.hrtime()
+    const cacheFilePath = join(this.buildDir, this.db.filename)
+    const cacheFileData = await fs.readFile(cacheFilePath, 'utf-8')
+    const cacheFileJson = JSON.parse(cacheFileData)
+
+    this.db.loadJSONObject(cacheFileJson)
+
+    // recreate references
+    this.items = this.db.getCollection('items')
+    this.dirs = this.items.mapReduce(doc => doc.dir, dirs => [...new Set(dirs)])
+
+    const [s, ns] = process.hrtime(startTime)
+    logger.info(`Loaded ${this.items.count()} documents from cache in ${s},${Math.round(ns / 1e8)} seconds`)
+  }
+
+  /**
+   * Store database info file
+   * @param {string} [dir] - Directory containing database dump file.
+   * @param {string} [filename] - Database dump filename.
+   */
+  async save (dir, filename) {
+    dir = dir || this.buildDir
+    filename = filename || this.db.filename
+
+    await mkdirp(dir)
+    await fs.writeFile(join(dir, filename), this.db.serialize(), 'utf-8')
+  }
+
+  async rebuildCache () {
+    logger.info('Rebuilding content cache')
+    this.db = new Loki('content.db')
+    this.items = this.db.addCollection('items', this.itemsCollectionOptions)
+    await this.initFromFilesystem()
+    await this.save()
   }
 
   /**
@@ -312,7 +363,7 @@ class Database extends Hookable {
 
       const document = this.items.findOne({ path: item.path })
 
-      logger.info(`Updated ${path.replace(this.cwd, '.')}`)
+      logger.info(`Updated ${path.replace(this.srcDir, '.')}`)
       if (document) {
         this.items.update({ $loki: document.$loki, meta: document.meta, ...item })
         return
@@ -338,7 +389,7 @@ class Database extends Hookable {
    */
   async parseFile (path) {
     const extension = extname(path)
-    // If unkown extension, skip
+    // If unknown extension, skip
     if (!EXTENSIONS.includes(extension) && !this.extendParserExtensions.includes(extension)) {
       return
     }
@@ -371,7 +422,7 @@ class Database extends Hookable {
       // Force data to be an array
       data = Array.isArray(data) ? data : [data]
     } catch (err) {
-      logger.warn(`Could not parse ${path.replace(this.cwd, '.')}:`, err.message)
+      logger.warn(`Could not parse ${path.replace(this.srcDir, '.')}:`, err.message)
       return null
     }
 
