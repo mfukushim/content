@@ -10,7 +10,6 @@ const logger = require('consola').withScope('@nuxt/content')
 const { default: PQueue } = require('p-queue')
 const { create } = require('ipfs-http-client')
 const ipfsCoreClient = require('ipfs-core')
-// const { CID } = require('ipfs-core')
 const { CID } = require('multiformats/cid')
 
 const jp = require('jsonpath')
@@ -280,8 +279,8 @@ class Database extends Hookable {
         ...item,
         dir,
         path,
-        cid: targetCid,
-        parentCid,
+        cid: targetCid.toString(),
+        parentCid: parentCid.toString(),
         extension,
         createdAt: existingCreatedAt,
         updatedAt: existingUpdatedAt

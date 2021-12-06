@@ -36,6 +36,7 @@
     "jsonpath": "^1.1.1",
     "mdast-util-to-hast": "^10.2.0",
     "mkdirp": "^1.0.4",
+    "multiformats": "^9.5.2",
     "node-req": "^2.1.2",
     "node-res": "^5.0.1",
     "p-queue": "6.6.2",
