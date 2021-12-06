@@ -1,6 +1,5 @@
 const { join, resolve } = require('path')
 const fs = require('graceful-fs').promises
-const mkdirp = require('mkdirp')
 const defu = require('defu')
 const logger = require('consola').withScope('@nuxt/content')
 const hash = require('hasha')
@@ -77,7 +76,8 @@ module.exports = async function (moduleOptions) {
     nuxt.hook('components:dirs', (dirs) => {
       dirs.push({
         path: '~/components/global',
-        global: true
+        global: true,
+        pathPrefix: false
       })
     })
   } else {
@@ -94,10 +94,21 @@ module.exports = async function (moduleOptions) {
     server.on('upgrade', (...args) => ws.callHook('upgrade', ...args))
   })
 
+  const useCache = options.useCache && !this.options.dev && this.options.ssr
+
   const database = new Database({
     ...options,
-    cwd: this.options.srcDir
+    srcDir: this.options.srcDir,
+    buildDir: resolve(this.options.buildDir, 'content'),
+    ipfsRoot: this.options.publicRuntimeConfig.ipfsRoot,
+    useCache
   })
+
+  if (useCache) {
+    this.nuxt.hook('builder:prepared', async () => {
+      await database.rebuildCache()
+    })
+  }
 
   // Database hooks
   database.hook('file:beforeInsert', item =>
@@ -186,12 +197,7 @@ module.exports = async function (moduleOptions) {
     this.nuxt.hook('generate:distRemoved', async () => {
       const dir = resolve(this.options.buildDir, 'dist', 'client', 'content')
 
-      await mkdirp(dir)
-      await fs.writeFile(
-        join(dir, `db-${dbHash}.json`),
-        database.db.serialize(),
-        'utf-8'
-      )
+      await database.save(dir, `db-${dbHash}.json`)
     })
 
     // Add client plugin
@@ -203,7 +209,7 @@ module.exports = async function (moduleOptions) {
         dirs: database.dirs
       }
     })
-    let publicPath = this.options.build.publicPath // can be an url
+    let publicPath = this.options.build.publicPath // can be a url
     let routerBasePath = this.options.router.base
 
     /* istanbul ignore if */
@@ -218,7 +224,7 @@ module.exports = async function (moduleOptions) {
       fileName: 'content/plugin.client.js',
       src: join(__dirname, '../templates/plugin.static.js'),
       options: {
-        // if publicPath is an URL, use public path, if not, add basepath before it
+        // if publicPath is a URL, use public path, if not, add basepath before it
         dbPath: isUrl(publicPath)
           ? `${publicPath}content`
           : `${routerBasePath}${publicPath}content`
@@ -272,7 +278,7 @@ module.exports = async function (moduleOptions) {
 
   function isUrl (string) {
     try {
-      // quick test if the string is an URL
+      // quick test if the string is a URL
       // eslint-disable-next-line no-new
       new URL(string)
     } catch (_) {

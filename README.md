@@ -1,60 +1,121 @@
-[![nuxt-content](https://content.nuxtjs.org/preview.png)](https://content.nuxtjs.org)
 
-# @nuxt/content
+# @nuxt/content customize to import ipfs doc directly
 
-[![npm version][npm-version-src]][npm-version-href]
-[![npm downloads][npm-downloads-src]][npm-downloads-href]
-[![Github Actions CI][github-actions-ci-src]][github-actions-ci-href]
-[![Codecov][codecov-src]][codecov-href]
-[![License][license-src]][license-href]
-[![lerna][lerna-src]][lerna-href]
 
-> @nuxt/content lets you write in a content/ directory, acting as Git-based Headless CMS
+## Customize
 
-- [🎲 &nbsp;Play on CodeSandbox](https://codesandbox.io/s/nuxtcontent-demo-l164h?)
-- [🎬 &nbsp;Demonstration videos](https://content.nuxtjs.org/#videos)
-- [✨ &nbsp;Release Notes](https://github.com/nuxt/content/releases)
-- [📖 &nbsp;Read the documentation](https://content.nuxtjs.org)
+- load a document whose root is the specified ipfs node directly as content
 
-## Features
+Other than that, same as the original.
 
-- Blazing fast hot reload in development
-- Vue components in Markdown
-- Full-text search
-- Support static site generation with `nuxt generate`
-- Powerful QueryBuilder API (MongoDB like)
-- Syntax highlighting to code blocks in markdown files using PrismJS.
-- Table of contents generation
-- Handles Markdown, CSV, YAML, JSON(5), XML
-- Extend with hooks
+## Consideration
 
-[📖 Read the documentation](https://content.nuxtjs.org)
+- export static site to ipfs directly (customize or add module to nuxt)
 
-## Development
+## How to use
 
-1. Clone this repository
-2. Install dependencies using `yarn install` or `npm install`
-3. Start development server using `yarn dev` or `npm run dev`
+It is not publish to npm. use it in the development environment.
 
-## License
+1. install and run ipfs node locally (e.g. install and run ipfs Desktop )
+2. Clone this repository
+3. at package/content ,take Link by yarn or npm
+4. put link to own blog project
+5. add ipfs node api endpoint and document root cid to nuxt.config.ts (nuxt.config.js)
+6. $content('content path') change to $content('ipfs') in your project
+7. build and run own blog project 
 
-[MIT License](./LICENSE)
+```bash
+# link custom build
+cd packages/content
+yarn link
 
-<!-- Badges -->
-[npm-version-src]: https://img.shields.io/npm/v/@nuxt/content/latest.svg
-[npm-version-href]: https://npmjs.com/package/@nuxt/content
+# link my nuxt/content project temporary
+cd ~/my-blog-project
+yarn link @nuxt/content
+    
+```
 
-[npm-downloads-src]: https://img.shields.io/npm/dt/@nuxt/content.svg
-[npm-downloads-href]: https://npmjs.com/package/@nuxt/content
+nuxt.config.ts
+```ts
+const config: NuxtConfig = {
+  ...,
+  content: {
+    ... ,
+    ipfsApiEndpoint: 'http://127.0.0.1:5002'  // your ipfs api endpoint (see ipfs node status)
+  },
+  publicRuntimeConfig: {
+    ipfsRoot: 'QmX....' //  your ipfs markdown document root
+  },
+}
+```
 
-[github-actions-ci-src]: https://github.com/nuxt/content/workflows/ci/badge.svg
-[github-actions-ci-href]: https://github.com/nuxt/content/actions?query=workflow%3Aci
+index.vue (Vuetify, TypeScript)
+```vue
+<template>
+    <v-list>
+      <v-list-item
+        v-for="body in posts" :key="body.slug"
+      >
+        <v-list-item-title>
+        {{body.parentCid}} <!-- body.cid is index.md.  article root path is body.parentCid -->
+        </v-list-item-title>
+        <v-list-item-content>
+        <nuxt-content :document="body"/>
+        </v-list-item-content>
+      </v-list-item>
+    </v-list>
+</template>
 
-[codecov-src]: https://img.shields.io/codecov/c/github/nuxt/content.svg
-[codecov-href]: https://codecov.io/gh/nuxt/content
+<script lang="ts">
+import { Context } from '@nuxt/types'
+import { Component, Vue } from 'nuxt-property-decorator'
 
-[license-src]: https://img.shields.io/npm/l/@nuxt/content.svg
-[license-href]: https://npmjs.com/package/@nuxt/content
+@Component({
+  name: 'Category'
+})
+export default class Category extends Vue {
+  posts?: any[]
 
-[lerna-src]: https://img.shields.io/badge/maintained%20with-lerna-cc00ff.svg
-[lerna-href]: https://lerna.js.org/
+  async asyncData ({
+    $content,
+    $config,
+    params
+  }: Context) {
+    const query = $content('ipfs',{deep: true}).where({
+      categories: { $contains: params.category }
+    })
+      .sortBy('date', 'desc')
+    const posts = await query.fetch()
+    return {
+      posts
+    }
+  }
+
+}
+
+```
+
+## ipfs document structure
+
+sample structure  
+
+```
+document root (DAG node ,bafyreighellwstevjhzeow5ktf3sn3sdgivscqdebbu5i6375xzlilhcle)
+│  
+├─2021-04-24-2021-04-24付近 (MFS/UnixFS, QmQi911LgFcckMprMTprfETdzt76pyuvKpXCvuqSDD1kTx)
+│      index.md
+│      
+├─2021-04-25-ipfsでブログを作ってみてわかったこと (MFS/UnixFS, QmZDeR9HvR1wpWXyXMiQaCAFQ241NNGfzEuNNXeh9qNaj1)
+│      index.md
+│      
+└─2021-04-26-学研電子辞典シリーズ-楽しむ辞典-現代新国語辞典 (MFS/UnixFS, Qmd1DEyZVCHrCjaKHqWkLAo3xmRAzQRgjKmZeHr1RTWiDC)
+    │  index.md
+    │  
+    └─images
+            PXL_20210426_035117085-1024x1008.jpg
+            PXL_20210426_035117085.jpg
+            PXL_20210426_035143199-761x1024.jpg
+            PXL_20210426_035143199.jpg
+
+
+```

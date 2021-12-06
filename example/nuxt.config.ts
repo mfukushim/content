@@ -1,4 +1,4 @@
-import type { NuxtConfig } from "@nuxt/types";
+import type {NuxtConfig} from "@nuxt/types";
 
 const config: NuxtConfig = {
   modules: ['@nuxt/content'],
@@ -15,9 +15,19 @@ const config: NuxtConfig = {
   content: {
     nestedProperties: ['categories.slug'],
     extendParser: {
-      '.custom': file => ({ body: file.split('\n').map(line => line.trim()) })
-    }
-  }
+      '.custom': file => ({body: file.split('\n').map(line => line.trim())})
+    },
+    markdown: {
+      remarkPlugins: [
+        '~/utils/contributors'
+      ]
+    },
+    ipfsApiEndpoint: 'http://127.0.0.1:5002'
+  },
+  publicRuntimeConfig: {
+    ipfsRoot: 'bafyreid5xfsyrpldwtuwyxpxhnsvuoyefeadydcgqg34s54a2pxieif3sa'
+  },
+  generate: {}
 };
 
 export default config;
