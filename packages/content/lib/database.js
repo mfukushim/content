@@ -10,7 +10,7 @@ const logger = require('consola').withScope('@nuxt/content')
 const { default: PQueue } = require('p-queue')
 const { create } = require('ipfs-http-client')
 const ipfsCoreClient = require('ipfs-core')
-const { CID } = require('ipfs-core')
+const { CID } = require('multiformats/cid')
 
 const jp = require('jsonpath')
 const {
@@ -74,9 +74,6 @@ class Database extends Hookable {
     }, this.options)
   }
 
-  /**
-   * Clear items in database and load files into collection
-   */
   async init () {
     if (this.useCache) {
       try {
@@ -94,8 +91,6 @@ class Database extends Hookable {
     const startTime = process.hrtime()
     this.dirs = ['/']
     this.items.clear()
-
-    const startTime = process.hrtime()
     if (this.options.ipfsRoot) {
       try {
         if (!client) {
@@ -284,8 +279,8 @@ class Database extends Hookable {
         ...item,
         dir,
         path,
-        cid: targetCid,
-        parentCid,
+        cid: targetCid.toString(),
+        parentCid: parentCid.toString(),
         extension,
         createdAt: existingCreatedAt,
         updatedAt: existingUpdatedAt
