@@ -315,7 +315,7 @@ export default {
   content: {
     markdown: {
       highlighter(rawCode, lang) {
-        const highlightedCode = highlightjs.highlight(lang, rawCode).value
+        const highlightedCode = highlightjs.highlight(rawCode, { language: lang }).value
 
         // We need to create a wrapper, because
         // the returned code from highlight.js
@@ -348,7 +348,7 @@ export default {
   content: {
     markdown: {
       highlighter(rawCode, lang, _, { h, node, u }) {
-        const highlightedCode = highlightjs.highlight(lang, rawCode).value
+        const highlightedCode = highlightjs.highlight(rawCode, { language: lang }).value
 
         // We can use ast helper to create the wrapper
         const childs = []
@@ -393,7 +393,7 @@ export default {
   content: {
     markdown: {
       highlighter(rawCode, lang, { lineHighlights, fileName }, { h, node, u }) {
-        const highlightedCode = highlightjs.highlight(lang, rawCode).value
+        const highlightedCode = highlightjs.highlight(rawCode, { language: lang }).value
 
         const childs = []
         const props = {
@@ -447,7 +447,7 @@ export default {
         const highlighter = await getHighlighter()
 
         return (rawCode, lang) => {
-          return highlighter.highlight(rawCode, lang)
+          return highlighter.highlight(rawCode, { language: lang })
         }
       }
     }
@@ -524,6 +524,13 @@ Your component should implement the following:
 
 You should be aware that you get the full markdown file content so this includes the front-matter. You can use `gray-matter` to split and join the markdown and the front-matter.
 
+### `useCache`
+
+- Type: `Boolean`
+- Default: `false`
+
+When `true`, the production server (`nuxt start`) will use cached version of the content (generated after running `nuxt build`) instead of parsing files. This improves app startup time, but makes app unaware of any content changes.
+
 ## Defaults
 
 ```js{}[nuxt.config.js]
@@ -535,6 +542,7 @@ export default {
     fullTextSearchFields: ['title', 'description', 'slug', 'text'],
     nestedProperties: [],
     liveEdit: true,
+    useCache: false,
     markdown: {
       remarkPlugins: [
         'remark-squeeze-paragraphs',
